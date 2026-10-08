@@ -1,849 +1,141 @@
-
 <!DOCTYPE html>
 <html lang="pt-BR">
-  <head>
-    <meta charset="UTF-8" />
 
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Clima em Tempo Real</title>
+  <link rel="icon" href="https://cdn-icons-png.flaticon.com/512/1116/1116453.png" type="image/png" />
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="script.js" defer></script>
+</head>
 
-    <title>Clima em Tempo Real</title>
+<body>
+  <header>
+    <div class="header-content">
+      <div class="header-brand">
+        <img class="header-weather-icon" src="https://cdn-icons-png.flaticon.com/512/1116/1116453.png"
+          alt="Ícone de clima" />
+        <h1> Clima em Tempo Real</h1>
+      </div>
+      <button class="theme-toggle-btn" id="btnTema" aria-label="Alternar tema claro e escuro"> Alternar Modo</button>
+    </div>
+  </header>
 
-    <!-- Biblioteca MQTT -->
-    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <div class="main-container">
 
-    <!-- Biblioteca Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <div class="card top-status-bar">
+      <div>
+        <span>Cidade atual: <b id="cidadeAtual">----</b></span>
+        <br>
+        <small style="color: var(--subtext-color);">Última Atualização: <span id="lastUpdate">----</span></small>
+      </div>
+      <div class="status-mqtt">
+        MQTT: <span id="mqttStatus" class="status-online">Conectado</span>
+      </div>
+    </div>
 
-    <style>
-      body {
-        font-family: Arial, sans-serif;
-        background: #3e66b7;
-        padding: 24px;
-      }
+    <div class="search-grid">
+      <div class="card">
+        <h2>☁️ Consultar Clima</h2>
+        <div class="row weather-search-controls">
+          <label for="cidade" class="sr-only" style="display:none;">Cidade</label>
+          <input id="cidade" type="text" placeholder="Ex.: São Paulo" aria-label="Nome da cidade" />
 
-      h2 {
-        margin: 0 0 8px;
-      }
+          <label for="pais" class="sr-only" style="display:none;">País</label>
+          <select id="pais" aria-label="Código do País">
+            <option value="BR">BR</option>
+            <option value="US">US</option>
+            <option value="PT">PT</option>
+            <option value="ES">ES</option>
+            <option value="AR">AR</option>
+          </select>
 
-      .card {
-        background: white;
-        border-radius: 12px;
-        padding: 20px;
-        max-width: 900px;
-        margin: 0 auto 16px;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
-      }
-
-      .row {
-        display: flex;
-        gap: 12px;
-        align-items: center;
-        flex-wrap: wrap;
-      }
-
-      .row input,
-      .row select,
-      .row button {
-        padding: 10px 12px;
-        border-radius: 8px;
-        border: 1px solid #ddd;
-      }
-
-      .row button {
-        cursor: pointer;
-        background: #3e66b7;
-        color: white;
-        font-weight: bold;
-        border: none;
-      }
-
-      .row button:hover {
-        background: #294b8f;
-      }
-
-      .vals {
-        display: flex;
-        gap: 24px;
-        font-size: 1.2rem;
-        margin: 16px 0 0;
-        flex-wrap: wrap;
-      }
-
-      #chart {
-        max-width: 900px;
-        margin: 16px auto;
-      }
-
-      .pill {
-        display: inline-block;
-        padding: 4px 10px;
-        background: #eef2ff;
-        border-radius: 999px;
-        font-size: 0.9rem;
-      }
-
-      #mensagem {
-        margin-top: 12px;
-        font-size: 0.95rem;
-        font-weight: 500;
-      }
-    </style>
-  </head>
-
-  <body>
-
-    <!-- ==========================================
-         CARD PRINCIPAL
-    =========================================== -->
-
-    <div class="card">
-
-      <h2>☁️ ESP32 + OpenWeatherMap</h2>
-
-      <div class="row">
-
-        <span class="pill">
-          Cidade atual:
-          <b id="cidadeAtual">—</b>
-        </span>
-
-        <input
-          id="cidade"
-          type="text"
-          placeholder="Ex.: Sao Paulo"
-        />
-
-        <select id="pais">
-          <option value="BR">BR</option>
-          <option value="US">US</option>
-          <option value="PT">PT</option>
-          <option value="AR">AR</option>
-          <option value="CL">CL</option>
-        </select>
-
-        <button id="aplicar">
-          Aplicar cidade
-        </button>
-
+          <button id="aplicar" aria-label="Buscar dados da cidade">Aplicar cidade</button>
+        </div>
+        <div id="mensagem" role="status" aria-live="polite"></div>
       </div>
 
-      <div id="mensagem"></div>
+      <div class="card">
+        <h2>⭐ Cidade Favorita</h2>
+        <div id="favBox">
+          <p id="favCityText" style="margin: 5px 0;">Nenhuma cidade favorita.</p>
+          <div class="row" style="margin-top: 10px;">
+            <button id="btnSaveFav">Salvar Atual</button>
+            <button id="btnLoadFav" style="background:#2196F3;">Consultar Favorita</button>
+          </div>
+        </div>
+      </div>
+    </div>
 
-      <div class="vals">
+    <div id="alertaClimatico" class="alert-box"></div>
 
-        <div>
-          🌡️ Temperatura:
+    <div class="card">
+      <h2>📊 Informações Meteorológicas</h2>
+      <div class="metricas-principais">
+        <div class="card-metrica card-metrica-destaque">
+          <span class="label">🌡️ Temperatura:</span>
           <b id="temp">-- °C</b>
         </div>
-
-        <div>
-          💧 Umidade:
+        <div class="card-metrica card-metrica-destaque">
+          <span class="label">🌡️ Sensação Térmica:</span>
+          <b id="feels">-- °C</b>
+        </div>
+        <div class="card-metrica card-metrica-destaque">
+          <span class="label">🌧️ Céu: </span>
+          <b id="rainStatus">--</b>
+        </div>
+      </div>
+      <div class="metricas-secundarias">
+        <div class="card-metrica">
+          <span class="label">💧 Umidade:</span>
           <b id="hum">-- %</b>
         </div>
-
+        <div class="card-metrica">
+          <span class="label">💨 Vento:</span>
+          <b id="wind">-- km/h</b>
+        </div>
+        <div class="card-metrica">
+          <span class="label">⏲️ Pressão:</span>
+          <b id="pressure">-- hPa</b>
+        </div>
+        <div class="card-metrica">
+          <span class="label">📉 Temp. Mínima:</span>
+          <b id="tempMin">-- °C</b>
+        </div>
+        <div class="card-metrica">
+          <span class="label">📈 Temp. Máxima:</span>
+          <b id="tempMax">-- °C</b>
+        </div>
       </div>
-
     </div>
-
-
-    <!-- ==========================================
-         GRÁFICO
-    =========================================== -->
 
     <div class="card">
-
-      <canvas id="chart"></canvas>
-
+      <h3>🕒 Histórico de Consultas</h3>
+      <ul id="historicoLista" class="history-list"></ul>
     </div>
 
+    <div class="card card-grafico">
+      <h2> Variações em Tempo Real</h2>
+      <div class="chart-container">
+        <canvas id="chart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <div class="footer-content">
+      <div class="footer-brand">
+        <strong>Clima em Tempo Real</strong>
+      </div>
+      <div class="footer-meta">
+        <span>OpenWeatherMap · MQTT · ESP32</span>
+      </div>
+    </div>
+  </footer>
+
+</body>
 
-    <script>
-
-      // =====================================================
-      // 1. CHAVE DA API OPENWEATHERMAP
-      // =====================================================
-
-      // COLE SUA CHAVE REAL AQUI
-      const OPENWEATHER_API_KEY =
-        "COLE_SUA_CHAVE_AQUI";
-
-
-      // =====================================================
-      // 2. CONFIGURAÇÃO MQTT
-      // =====================================================
-
-      const MQTT_BROKER =
-        "ws://broker.hivemq.com:8000/mqtt";
-
-
-      // Tópicos MQTT
-
-      const TOPIC_TEMPERATURA =
-        "esp32/clima/temperatura";
-
-      const TOPIC_UMIDADE =
-        "esp32/clima/umidade";
-
-      const TOPIC_CIDADE_ATUAL =
-        "esp32/clima/cidadeAtual";
-
-      const TOPIC_CIDADE =
-        "esp32/clima/cidade";
-
-
-      // =====================================================
-      // 3. CONECTAR AO MQTT
-      // =====================================================
-
-      const client = mqtt.connect(MQTT_BROKER);
-
-
-      client.on("connect", () => {
-
-        console.log("✅ Conectado ao MQTT");
-
-        client.subscribe(
-          TOPIC_TEMPERATURA,
-          (erro) => {
-
-            if (erro) {
-              console.error(
-                "Erro ao assinar temperatura:",
-                erro
-              );
-            }
-
-          }
-        );
-
-
-        client.subscribe(
-          TOPIC_UMIDADE,
-          (erro) => {
-
-            if (erro) {
-              console.error(
-                "Erro ao assinar umidade:",
-                erro
-              );
-            }
-
-          }
-        );
-
-
-        client.subscribe(
-          TOPIC_CIDADE_ATUAL,
-          (erro) => {
-
-            if (erro) {
-              console.error(
-                "Erro ao assinar cidade:",
-                erro
-              );
-            }
-
-          }
-        );
-
-      });
-
-
-      client.on("error", (erro) => {
-
-        console.error(
-          "❌ Erro MQTT:",
-          erro
-        );
-
-      });
-
-
-      // =====================================================
-      // 4. CRIAÇÃO DO GRÁFICO
-      // =====================================================
-
-      const ctx =
-        document
-          .getElementById("chart")
-          .getContext("2d");
-
-
-      const chart = new Chart(ctx, {
-
-        type: "line",
-
-        data: {
-
-          labels: [],
-
-          datasets: [
-
-            {
-              label: "Temperatura (°C)",
-
-              data: [],
-
-              borderColor: "red",
-
-              backgroundColor:
-                "rgba(255,0,0,0.15)",
-
-              fill: true,
-
-              tension: 0.3
-            },
-
-            {
-              label: "Umidade (%)",
-
-              data: [],
-
-              borderColor: "blue",
-
-              backgroundColor:
-                "rgba(0,0,255,0.15)",
-
-              fill: true,
-
-              tension: 0.3
-            }
-
-          ]
-
-        },
-
-        options: {
-
-          responsive: true,
-
-          plugins: {
-
-            legend: {
-              display: true
-            }
-
-          },
-
-          scales: {
-
-            x: {
-
-              title: {
-                display: true,
-                text: "Tempo"
-              }
-
-            },
-
-            y: {
-
-              title: {
-                display: true,
-                text: "Valor"
-              }
-
-            }
-
-          }
-
-        }
-
-      });
-
-
-      // =====================================================
-      // 5. RECEBER MENSAGENS MQTT
-      // =====================================================
-
-      client.on(
-        "message",
-        (topic, message) => {
-
-          const txt =
-            message.toString();
-
-          const hora =
-            new Date()
-              .toLocaleTimeString();
-
-
-          // ================================================
-          // TEMPERATURA
-          // ================================================
-
-          if (
-            topic === TOPIC_TEMPERATURA
-          ) {
-
-            const valor =
-              parseFloat(txt);
-
-
-            if (!isNaN(valor)) {
-
-              document
-                .getElementById("temp")
-                .textContent =
-                `${valor} °C`;
-
-
-              chart.data.labels.push(
-                hora
-              );
-
-
-              chart.data.datasets[0]
-                .data.push(valor);
-
-            }
-
-          }
-
-
-          // ================================================
-          // UMIDADE
-          // ================================================
-
-          if (
-            topic === TOPIC_UMIDADE
-          ) {
-
-            const valor =
-              parseFloat(txt);
-
-
-            if (!isNaN(valor)) {
-
-              document
-                .getElementById("hum")
-                .textContent =
-                `${valor} %`;
-
-
-              const dataset =
-                chart.data.datasets[1];
-
-
-              dataset.data.push(valor);
-
-            }
-
-          }
-
-
-          // ================================================
-          // CIDADE
-          // ================================================
-
-          if (
-            topic === TOPIC_CIDADE_ATUAL
-          ) {
-
-            document
-              .getElementById("cidadeAtual")
-              .textContent =
-              txt;
-
-          }
-
-
-          // ================================================
-          // LIMITAR GRÁFICO A 30 PONTOS
-          // ================================================
-
-          const maxPts = 30;
-
-
-          while (
-            chart.data.labels.length >
-            maxPts
-          ) {
-
-            chart.data.labels.shift();
-
-            chart.data.datasets.forEach(
-              (dataset) => {
-
-                dataset.data.shift();
-
-              }
-            );
-
-          }
-
-
-          chart.update();
-
-        }
-      );
-
-
-      // =====================================================
-      // 6. CONSULTAR OPENWEATHERMAP
-      // =====================================================
-
-      async function buscarClima(
-        cidade,
-        pais
-      ) {
-
-        try {
-
-          mostrarMensagem(
-            "🌐 Consultando OpenWeatherMap...",
-            "blue"
-          );
-
-
-          // Monta a URL da API
-
-          const url =
-            "https://api.openweathermap.org/data/2.5/weather" +
-            "?q=" +
-            encodeURIComponent(cidade) +
-            "," +
-            encodeURIComponent(pais) +
-            "&appid=" +
-            OPENWEATHER_API_KEY +
-            "&units=metric" +
-            "&lang=pt_br";
-
-
-          console.log(
-            "🌐 URL da API:",
-            url
-          );
-
-
-          // Faz a requisição
-
-          const resposta =
-            await fetch(url);
-
-
-          // Verifica erro
-
-          if (!resposta.ok) {
-
-            throw new Error(
-              "Não foi possível consultar a cidade. " +
-              "Verifique a cidade e a API Key."
-            );
-
-          }
-
-
-          // Converte para JSON
-
-          const dados =
-            await resposta.json();
-
-
-          console.log(
-            "☁️ Dados OpenWeatherMap:",
-            dados
-          );
-
-
-          // =================================================
-          // OBTÉM OS DADOS
-          // =================================================
-
-          const temperatura =
-            dados.main.temp;
-
-
-          const umidade =
-            dados.main.humidity;
-
-
-          const nomeCidade =
-            dados.name;
-
-
-          // =================================================
-          // ATUALIZA A INTERFACE
-          // =================================================
-
-          document
-            .getElementById("temp")
-            .textContent =
-            `${temperatura} °C`;
-
-
-          document
-            .getElementById("hum")
-            .textContent =
-            `${umidade} %`;
-
-
-          document
-            .getElementById("cidadeAtual")
-            .textContent =
-            `${nomeCidade}, ${pais}`;
-
-
-          // =================================================
-          // PUBLICA NO MQTT
-          // =================================================
-
-          if (client.connected) {
-
-            client.publish(
-              TOPIC_TEMPERATURA,
-              temperatura.toString()
-            );
-
-
-            client.publish(
-              TOPIC_UMIDADE,
-              umidade.toString()
-            );
-
-
-            client.publish(
-              TOPIC_CIDADE_ATUAL,
-              `${nomeCidade}, ${pais}`
-            );
-
-
-            console.log(
-              "📤 Temperatura publicada:",
-              temperatura
-            );
-
-
-            console.log(
-              "📤 Umidade publicada:",
-              umidade
-            );
-
-          }
-
-
-          // =================================================
-          // ADICIONAR AO GRÁFICO
-          // =================================================
-
-          const hora =
-            new Date()
-              .toLocaleTimeString();
-
-
-          chart.data.labels.push(
-            hora
-          );
-
-
-          chart.data.datasets[0]
-            .data.push(
-              temperatura
-            );
-
-
-          chart.data.datasets[1]
-            .data.push(
-              umidade
-            );
-
-
-          // Limitar a 30 leituras
-
-          while (
-            chart.data.labels.length >
-            30
-          ) {
-
-            chart.data.labels.shift();
-
-            chart.data.datasets
-              .forEach(
-                (dataset) => {
-
-                  dataset.data.shift();
-
-                }
-              );
-
-          }
-
-
-          chart.update();
-
-
-          mostrarMensagem(
-            `✅ Clima de ${nomeCidade} atualizado com sucesso!`,
-            "green"
-          );
-
-
-        } catch (erro) {
-
-          console.error(
-            "❌ Erro:",
-            erro
-          );
-
-
-          mostrarMensagem(
-            "❌ Erro: " + erro.message,
-            "red"
-          );
-
-        }
-
-      }
-
-
-      // =====================================================
-      // 7. FUNÇÃO DE MENSAGEM
-      // =====================================================
-
-      function mostrarMensagem(
-        texto,
-        cor
-      ) {
-
-        const elemento =
-          document.getElementById(
-            "mensagem"
-          );
-
-
-        elemento.textContent =
-          texto;
-
-
-        elemento.style.color =
-          cor;
-
-      }
-
-
-      // =====================================================
-      // 8. BOTÃO APLICAR CIDADE
-      // =====================================================
-
-      document
-        .getElementById("aplicar")
-        .addEventListener(
-          "click",
-          async () => {
-
-            const cidade =
-              document
-                .getElementById("cidade")
-                .value
-                .trim();
-
-
-            const pais =
-              document
-                .getElementById("pais")
-                .value
-                .trim();
-
-
-            // Verificar cidade
-
-            if (!cidade) {
-
-              alert(
-                "Informe uma cidade. Exemplo: Sao Paulo"
-              );
-
-              return;
-
-            }
-
-
-            // Verificar API Key
-
-            if (
-              OPENWEATHER_API_KEY ===
-              "COLE_SUA_CHAVE_AQUI"
-            ) {
-
-              alert(
-                "Você precisa colocar sua API Key da OpenWeatherMap no código."
-              );
-
-              return;
-
-            }
-
-
-            console.log(
-              "📤 Cidade selecionada:",
-              cidade
-            );
-
-
-            console.log(
-              "🌎 País:",
-              pais
-            );
-
-
-            // Publica cidade para o ESP32
-
-            if (client.connected) {
-
-              const payload =
-                `${cidade},${pais}`;
-
-
-              client.publish(
-                TOPIC_CIDADE,
-                payload
-              );
-
-
-              console.log(
-                "📤 Cidade enviada ao MQTT:",
-                payload
-              );
-
-            }
-
-
-            // Consulta diretamente a OpenWeatherMap
-
-            await buscarClima(
-              cidade,
-              pais
-            );
-
-          }
-        );
-
-
-      // =====================================================
-      // 9. PERMITIR PRESSIONAR ENTER
-      // =====================================================
-
-      document
-        .getElementById("cidade")
-        .addEventListener(
-          "keydown",
-          (evento) => {
-
-            if (
-              evento.key === "Enter"
-            ) {
-
-              document
-                .getElementById("aplicar")
-                .click();
-
-            }
-
-          }
-        );
-
-    </script>
-
-  </body>
 </html>
-```
