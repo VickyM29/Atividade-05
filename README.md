@@ -309,23 +309,6 @@ O cabeçalho apresenta o nome **Clima em Tempo Real** e o botão para alternar e
 
 ---
 
-## 📌 Possíveis melhorias futuras
-
-Algumas funcionalidades que podem ser adicionadas posteriormente:
-
-* 🌤️ Previsão para os próximos dias
-* 📍 Geolocalização automática
-* 🌎 Mais países no seletor
-* 💾 Persistência do histórico
-* 📤 Exportação dos dados meteorológicos
-* 🔐 Autenticação de usuários
-* 📡 Dashboard para múltiplos dispositivos ESP32
-* 🔒 Uso de MQTT sobre conexão segura (`wss://`)
-* 🗄️ Armazenamento dos dados em banco de dados
-* 🔔 Notificações de alertas climáticos
-
----
-
 ## 👨‍💻 Projeto
 
 ### Clima em Tempo Real
