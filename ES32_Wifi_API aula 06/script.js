@@ -1,337 +1,674 @@
- // =====================================================
-    // 1. CONFIGURAÇÕES & CHAVE API
-    // =====================================================
-    const OPENWEATHER_API_KEY = "SUA API AQUI"; // Substitua pela sua chave de API do OpenWeatherMap
-    const MQTT_BROKER = "ws://broker.hivemq.com:8000/mqtt";
+const API_GEOCODING = "https://geocoding-api.open-meteo.com/v1/search";
+const API_PREVISAO = "https://api.open-meteo.com/v1/forecast";
+const API_RIOS = "https://flood-api.open-meteo.com/v1/flood";
 
-    const TOPIC_TEMPERATURA = "esp32/clima/temperatura";
-    const TOPIC_UMIDADE = "esp32/clima/umidade";
-    const TOPIC_CIDADE_ATUAL = "esp32/clima/cidadeAtual";
-    const TOPIC_CIDADE = "esp32/clima/cidade";
+let graficoChuva = null;
+let graficoTemperatura = null;
+let cidadeMonitorada = null;
+let dadosUltimaConsulta = null; // Guarda os últimos dados para atualizar os gráficos ao trocar de tema
 
-    // =====================================================
-    // 2. TEMA CLARO/ESCURO  + ATUALIZAÇÃO DO GRÁFICO
-    // =====================================================
-    const btnTema = document.getElementById("btnTema");
+const $ = (id) => document.getElementById(id);
 
-    if (localStorage.getItem("theme") === "light") {
-      document.body.classList.add("light-theme");
+function mostrarMensagem(texto) {
+  const elemento = $("mensagem");
+  if (elemento) elemento.textContent = texto;
+}
+
+function atualizarTexto(id, texto) {
+  const elemento = $(id);
+  if (elemento) elemento.textContent = texto;
+}
+
+function formatarNumero(valor, casas = 1) {
+  if (valor === null || valor === undefined || !Number.isFinite(Number(valor))) {
+    return "Sem dados";
+  }
+
+  return Number(valor).toLocaleString("pt-BR", {
+    maximumFractionDigits: casas,
+    minimumFractionDigits: casas
+  });
+}
+
+function formatarDataHora(data) {
+  if (!data) return "Sem dados";
+
+  return new Date(data).toLocaleString("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short"
+  });
+}
+
+function formatarData(data) {
+  return new Date(`${data}T12:00:00`).toLocaleDateString("pt-BR", {
+    weekday: "short",
+    day: "2-digit",
+    month: "2-digit"
+  });
+}
+
+async function buscarJSON(url) {
+  const resposta = await fetch(url);
+
+  if (!resposta.ok) {
+    throw new Error(`Erro ao consultar a API (HTTP ${resposta.status}).`);
+  }
+
+  return resposta.json();
+}
+
+// =====================================================
+// 1. TEMA CLARO E ESCURO (COM ATUALIZAÇÃO DOS GRÁFICOS)
+// =====================================================
+
+const btnTema = $("btnTema");
+
+if (localStorage.getItem("theme") === "light") {
+  document.body.classList.add("light-theme");
+}
+
+if (btnTema) {
+  btnTema.addEventListener("click", () => {
+    document.body.classList.toggle("light-theme");
+
+    const temaClaro = document.body.classList.contains("light-theme");
+    localStorage.setItem("theme", temaClaro ? "light" : "dark");
+
+    // Redesenha os gráficos com as cores do novo tema se houver dados carregados
+    if (dadosUltimaConsulta) {
+      atualizarGraficoChuva(dadosUltimaConsulta);
+      atualizarGraficoTemperatura(dadosUltimaConsulta);
     }
+  });
+}
 
-    btnTema.addEventListener("click", () => {
-      document.body.classList.toggle("light-theme");
-      const isLight = document.body.classList.contains("light-theme");
-      localStorage.setItem("theme", isLight ? "light" : "dark");
-      atualizarCoresGrafico();
-    });
+// =====================================================
+// 2. LOCALIZAR CIDADE
+// =====================================================
 
-    // =====================================================
-    // 3. CONEXÃO MQTT E STATUS
-    // =====================================================
-    const mqttStatusEl = document.getElementById("mqttStatus");
-    const client = mqtt.connect(MQTT_BROKER);
+async function localizarCidade(nome, pais) {
+  const parametros = new URLSearchParams({
+    name: nome,
+    count: "10",
+    language: "pt",
+    format: "json"
+  });
 
-    client.on("connect", () => {
-      console.log("✅ Conectado ao MQTT");
-      mqttStatusEl.textContent = "Conectado";
-      mqttStatusEl.className = "status-online";
+  const dados = await buscarJSON(`${API_GEOCODING}?${parametros}`);
 
-      client.subscribe(TOPIC_TEMPERATURA);
-      client.subscribe(TOPIC_UMIDADE);
-    });
+  if (!dados.results || dados.results.length === 0) {
+    throw new Error("Cidade não encontrada. Confira o nome.");
+  }
 
-    client.on("error", (erro) => {
-      console.error("❌ Erro MQTT:", erro);
-      mqttStatusEl.textContent = "Erro de Conexão";
-      mqttStatusEl.className = "status-offline";
-    });
+  const resultado = dados.results.find(
+    item => item.country_code?.toUpperCase() === pais.toUpperCase()
+  );
 
-    // =====================================================
-    // 4. CONFIGURAÇÃO DO CHART.JS COM CORES DINÂMICAS
-    // =====================================================
-    const ctx = document.getElementById("chart").getContext("2d");
-    const chart = new Chart(ctx, {
-      type: "line",
-      data: {
-        labels: [],
-        datasets: [
-          {
-            label: "Temperatura (°C)",
-            data: [],
-            borderColor: "#ff5252",
-            backgroundColor: "rgba(255, 82, 82, 0.2)",
-            fill: true,
-            tension: 0.3
-          },
-          {
-            label: "Umidade (%)",
-            data: [],
-            borderColor: "#448aff",
-            backgroundColor: "rgba(68, 138, 255, 0.2)",
-            fill: true,
-            tension: 0.3
+  if (!resultado) {
+    throw new Error("Não encontrei essa cidade no país selecionado.");
+  }
+
+  return resultado;
+}
+
+// =====================================================
+// 3. CONSULTAR PREVISÃO DO TEMPO E DA CHUVA
+// =====================================================
+
+async function consultarPrevisao(cidade) {
+  const parametros = new URLSearchParams({
+    latitude: String(cidade.latitude),
+    longitude: String(cidade.longitude),
+    current: [
+      "temperature_2m",
+      "relative_humidity_2m",
+      "apparent_temperature",
+      "precipitation",
+      "rain",
+      "showers",
+      "wind_speed_10m",
+      "pressure_msl"
+    ].join(","),
+    hourly: [
+      "precipitation",
+      "precipitation_probability",
+      "temperature_2m",
+      "soil_moisture_0_to_7cm"
+    ].join(","),
+    daily: [
+      "precipitation_sum",
+      "precipitation_probability_max",
+      "temperature_2m_max",
+      "temperature_2m_min"
+    ].join(","),
+    forecast_days: "3",
+    timezone: "auto"
+  });
+
+  return buscarJSON(`${API_PREVISAO}?${parametros}`);
+}
+
+// =====================================================
+// 4. CONSULTAR PREVISÃO DE VAZÃO DO RIO
+// =====================================================
+
+async function consultarDadosRio(cidade) {
+  const parametros = new URLSearchParams({
+    latitude: String(cidade.latitude),
+    longitude: String(cidade.longitude),
+    daily: [
+      "river_discharge",
+      "river_discharge_mean",
+      "river_discharge_max",
+      "river_discharge_min"
+    ].join(","),
+    forecast_days: "3",
+    past_days: "1"
+  });
+
+  try {
+    const dados = await buscarJSON(`${API_RIOS}?${parametros}`);
+    atualizarDadosRio(dados);
+  } catch (erro) {
+    console.warn("Não foi possível consultar a vazão:", erro);
+    atualizarDadosRio(null);
+  }
+}
+
+function atualizarDadosRio(dados) {
+  atualizarTexto("estacaoRio", "Modelo de previsão regional");
+  atualizarTexto("nivelRio", "Sem dados de nível medido");
+
+  if (!dados?.daily?.time) {
+    atualizarTexto("vazaoRio", "Sem dados de vazão");
+    atualizarTexto("dataRio", "Data indisponível");
+    atualizarTexto(
+      "alertaRio",
+      "Não foi possível obter a previsão de vazão para esta localização. Consulte os órgãos oficiais."
+    );
+    return;
+  }
+
+  const diario = dados.daily;
+  const indice = diario.time.findIndex(
+    data => data >= new Date().toISOString().slice(0, 10)
+  );
+  const i = indice >= 0 ? indice : 0;
+
+  const vazao = diario.river_discharge?.[i];
+  const maxima = diario.river_discharge_max?.[i];
+
+  atualizarTexto(
+    "vazaoRio",
+    vazao == null ? "Sem dados de vazão" : `${formatarNumero(vazao)} m³/s`
+  );
+
+  atualizarTexto("dataRio", diario.time[i] || "Data indisponível");
+
+  if (maxima != null && Number.isFinite(Number(maxima))) {
+    atualizarTexto(
+      "alertaRio",
+      `Previsão de vazão máxima para a data consultada: ${formatarNumero(maxima)} m³/s. Este valor é uma estimativa do modelo, não uma medição de estação nem um alerta oficial de enchente.`
+    );
+  } else {
+    atualizarTexto(
+      "alertaRio",
+      "A API não forneceu uma vazão máxima para a data consultada. Isso não significa ausência de risco."
+    );
+  }
+}
+
+// =====================================================
+// 5. GRÁFICO DE CHUVA (CORES CORRIGIDAS CONFORME O TEMA)
+// =====================================================
+
+function atualizarGraficoChuva(dados) {
+  const canvas = $("graficoChuva");
+
+  if (!canvas || typeof Chart === "undefined") {
+    console.error("Canvas ou Chart.js não encontrado.");
+    return;
+  }
+
+  if (!dados?.hourly?.time || !dados?.hourly?.precipitation) {
+    console.error("Dados de chuva indisponíveis.");
+    return;
+  }
+
+  const horas = dados.hourly.time.slice(0, 24);
+  const chuvas = dados.hourly.precipitation.slice(0, 24);
+  const labels = horas.map(hora => hora.substring(11, 16));
+
+  const graficoExistente = Chart.getChart(canvas);
+  if (graficoExistente) {
+    graficoExistente.destroy();
+  }
+
+  const isTemaClaro = document.body.classList.contains("light-theme");
+  const corTexto = isTemaClaro ? "#0f172a" : "#f0f4f8";
+  const corGrelha = isTemaClaro ? "rgba(0, 0, 0, 0.08)" : "rgba(255, 255, 255, 0.08)";
+
+  graficoChuva = new Chart(canvas, {
+    type: "bar",
+    data: {
+      labels: labels,
+      datasets: [{
+        label: "Precipitação prevista (mm)",
+        data: chuvas,
+        backgroundColor: "#2563eb",
+        borderRadius: 3
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          labels: {
+            color: corTexto
           }
-        ]
+        }
       },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        layout: {
-          padding: {
-            bottom: 10
+      scales: {
+        x: {
+          ticks: {
+            color: corTexto
+          },
+          grid: {
+            color: corGrelha
           }
         },
-        plugins: {
-          legend: { labels: { color: "#ffffff" } }
+        y: {
+          beginAtZero: true,
+          title: {
+            display: true,
+            text: "Milímetros (mm)",
+            color: corTexto
+          },
+          ticks: {
+            color: corTexto
+          },
+          grid: {
+            color: corGrelha
+          }
+        }
+      }
+    }
+  });
+}
+
+// =====================================================
+// 6. GRÁFICO DE TEMPERATURA (CORES CORRIGIDAS CONFORME O TEMA)
+// =====================================================
+
+function atualizarGraficoTemperatura(dados) {
+  const canvas = $("graficoTemperatura");
+
+  if (!canvas || typeof Chart === "undefined") {
+    console.error("Canvas ou Chart.js não encontrado.");
+    return;
+  }
+
+  if (!dados?.hourly?.time || !dados?.hourly?.temperature_2m) {
+    console.error("Dados de temperatura indisponíveis.");
+    return;
+  }
+
+  const horas = dados.hourly.time.slice(0, 24);
+  const temperaturas = dados.hourly.temperature_2m.slice(0, 24);
+  const labels = horas.map(hora => hora.substring(11, 16));
+
+  const graficoExistente = Chart.getChart(canvas);
+  if (graficoExistente) {
+    graficoExistente.destroy();
+  }
+
+  const isTemaClaro = document.body.classList.contains("light-theme");
+  const corTexto = isTemaClaro ? "#0f172a" : "#f0f4f8";
+  const corGrelha = isTemaClaro ? "rgba(0, 0, 0, 0.08)" : "rgba(255, 255, 255, 0.08)";
+
+  graficoTemperatura = new Chart(canvas, {
+    type: "line",
+    data: {
+      labels: labels,
+      datasets: [{
+        label: "Temperatura prevista (°C)",
+        data: temperaturas,
+        borderColor: "#0284c7",
+        backgroundColor: "rgba(2, 132, 199, 0.12)",
+        fill: true,
+        tension: 0.2,
+        spanGaps: true
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          labels: {
+            color: corTexto
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: {
+            color: corTexto
+          },
+          grid: {
+            color: corGrelha
+          }
         },
-        scales: {
-          x: { ticks: { color: "#ffffff" }, grid: { color: "rgba(255, 255, 255, 0.1)" } },
-          y: { ticks: { color: "#ffffff" }, grid: { color: "rgba(255, 255, 255, 0.1)" } }
+        y: {
+          title: {
+            display: true,
+            text: "Graus Celsius (°C)",
+            color: corTexto
+          },
+          ticks: {
+            color: corTexto
+          },
+          grid: {
+            color: corGrelha
+          }
         }
       }
-    });
+    }
+  });
+}
 
-    function atualizarCoresGrafico() {
-      const isLight = document.body.classList.contains("light-theme");
-      const textColor = isLight ? "#1a202c" : "#ffffff";
-      const gridColor = isLight ? "rgba(0, 0, 0, 0.1)" : "rgba(255, 255, 255, 0.1)";
+// =====================================================
+// 7. INDICADORES METEOROLÓGICOS
+// =====================================================
 
-      chart.options.plugins.legend.labels.color = textColor;
-      chart.options.scales.x.ticks.color = textColor;
-      chart.options.scales.y.ticks.color = textColor;
-      chart.options.scales.x.grid.color = gridColor;
-      chart.options.scales.y.grid.color = gridColor;
-      chart.update();
+function atualizarIndicadores(dados) {
+  dadosUltimaConsulta = dados; // Salva a referência global
+
+  const atual = dados.current;
+  const horario = dados.hourly;
+  const diario = dados.daily;
+
+  const chuva24 = horario.precipitation
+    .slice(0, 24)
+    .reduce((total, valor) => total + (Number(valor) || 0), 0);
+
+  atualizarTexto("chuvaAtual", `${formatarNumero(atual.precipitation)} mm`);
+  atualizarTexto("chuvaHoje", `${formatarNumero(diario.precipitation_sum[0])} mm`);
+  atualizarTexto(
+    "probChuva",
+    `${formatarNumero(horario.precipitation_probability[0], 0)}%`
+  );
+  atualizarTexto("chuva24h", `${formatarNumero(chuva24)} mm`);
+
+  const solo = horario.soil_moisture_0_to_7cm?.[0];
+  atualizarTexto(
+    "umidadeSolo",
+    solo == null ? "Sem dados" : `${formatarNumero(solo, 3)} m³/m³`
+  );
+
+  atualizarTexto("umidadeAr", `${formatarNumero(atual.relative_humidity_2m, 0)}%`);
+  atualizarTexto("temperatura", `${formatarNumero(atual.temperature_2m)} °C`);
+  atualizarTexto("vento", `${formatarNumero(atual.wind_speed_10m)} km/h`);
+  atualizarTexto("apiStatus", "Consulta concluída");
+  atualizarTexto("lastUpdate", formatarDataHora(atual.time));
+
+  atualizarGraficoChuva(dados);
+  atualizarGraficoTemperatura(dados);
+  atualizarPrevisaoDiaria(dados);
+}
+
+// =====================================================
+// 8. PREVISÃO PARA OS PRÓXIMOS DIAS
+// =====================================================
+
+function atualizarPrevisaoDiaria(dados) {
+  const container = $("previsaoDiaria");
+  if (!container) return;
+
+  container.replaceChildren();
+
+  dados.daily.time.forEach((data, i) => {
+    const cartao = document.createElement("article");
+    cartao.className = "day-card";
+
+    const titulo = document.createElement("h3");
+    titulo.textContent = formatarData(data);
+
+    const minima = document.createElement("p");
+    minima.textContent =
+      `Mínima: ${formatarNumero(dados.daily.temperature_2m_min[i])} °C`;
+
+    const maxima = document.createElement("p");
+    maxima.textContent =
+      `Máxima: ${formatarNumero(dados.daily.temperature_2m_max[i])} °C`;
+
+    const chuva = document.createElement("p");
+    chuva.textContent =
+      `Precipitação prevista: ${formatarNumero(dados.daily.precipitation_sum[i])} mm`;
+
+    const probabilidade = document.createElement("p");
+    probabilidade.textContent =
+      `Probabilidade máxima: ${formatarNumero(dados.daily.precipitation_probability_max[i], 0)}%`;
+
+    cartao.append(titulo, minima, maxima, chuva, probabilidade);
+    container.appendChild(cartao);
+  });
+}
+
+// =====================================================
+// 9. HISTÓRICO DE CONSULTAS
+// =====================================================
+
+function carregarHistorico() {
+  const lista = $("historicoLista");
+  if (!lista) return;
+
+  let historico = [];
+
+  try {
+    historico = JSON.parse(localStorage.getItem("historicoAgua") || "[]");
+  } catch {
+    historico = [];
+  }
+
+  lista.replaceChildren();
+
+  if (historico.length === 0) {
+    const item = document.createElement("li");
+    item.textContent = "Nenhuma consulta registrada.";
+    lista.appendChild(item);
+    return;
+  }
+
+  historico.forEach(registro => {
+    const item = document.createElement("li");
+    item.textContent = `${registro.cidade} — ${registro.data}`;
+    lista.appendChild(item);
+  });
+}
+
+function salvarNoHistorico(cidade) {
+  let historico = [];
+
+  try {
+    historico = JSON.parse(localStorage.getItem("historicoAgua") || "[]");
+  } catch {
+    historico = [];
+  }
+
+  historico.unshift({
+    cidade,
+    data: new Date().toLocaleString("pt-BR")
+  });
+
+  localStorage.setItem("historicoAgua", JSON.stringify(historico.slice(0, 10)));
+  carregarHistorico();
+}
+
+// =====================================================
+// 10. CIDADE FAVORITA
+// =====================================================
+
+function atualizarFavoritoTexto() {
+  const elemento = $("favCityText");
+  if (!elemento) return;
+
+  const salvo = localStorage.getItem("cidadeFavorita");
+
+  if (!salvo) {
+    elemento.textContent = "Nenhuma localidade salva.";
+    return;
+  }
+
+  try {
+    const favorito = JSON.parse(salvo);
+    elemento.textContent = `${favorito.nome}, ${favorito.pais}`;
+  } catch {
+    elemento.textContent = "Favorito salvo, mas não foi possível ler os dados.";
+  }
+}
+
+function carregarCidadeFavorita() {
+  const salvo = localStorage.getItem("cidadeFavorita");
+
+  if (!salvo) {
+    mostrarMensagem("Você ainda não salvou uma cidade favorita.");
+    return;
+  }
+
+  try {
+    const favorito = JSON.parse(salvo);
+    if ($("cidade")) $("cidade").value = favorito.nome;
+    if ($("pais")) $("pais").value = favorito.pais;
+    consultarCidade(favorito.nome, favorito.pais);
+  } catch {
+    mostrarMensagem("Não foi possível carregar a cidade favorita.");
+  }
+}
+
+const favCityTextEl = $("favCityText");
+const btnSaveFav = $("btnSaveFav");
+const btnDeleteFav = $("btnDeleteFav");
+
+if (favCityTextEl) {
+  favCityTextEl.addEventListener("click", () => {
+    carregarCidadeFavorita();
+  });
+}
+
+if (btnSaveFav) {
+  btnSaveFav.addEventListener("click", () => {
+    if (!cidadeMonitorada) {
+      mostrarMensagem("Consulte uma cidade antes de salvar.");
+      return;
     }
 
-    atualizarCoresGrafico();
+    localStorage.setItem("cidadeFavorita", JSON.stringify(cidadeMonitorada));
+    atualizarFavoritoTexto();
+    mostrarMensagem("Cidade favorita salva.");
+  });
+}
 
-    // =====================================================
-    // 5. RECEBER MENSAGENS MQTT
-    // =====================================================
-    client.on("message", (topic, message) => {
-      const txt = message.toString();
-      const hora = new Date().toLocaleTimeString();
+if (btnDeleteFav) {
+  btnDeleteFav.addEventListener("click", () => {
+    const salvo = localStorage.getItem("cidadeFavorita");
 
-      if (topic === TOPIC_TEMPERATURA) {
-        const valor = parseFloat(txt);
-        if (!isNaN(valor)) {
-          document.getElementById("temp").textContent = `${valor} °C`;
-          chart.data.labels.push(hora);
-          chart.data.datasets[0].data.push(valor);
-        }
-      }
-
-      if (topic === TOPIC_UMIDADE) {
-        const valor = parseFloat(txt);
-        if (!isNaN(valor)) {
-          document.getElementById("hum").textContent = `${valor} %`;
-          chart.data.datasets[1].data.push(valor);
-        }
-      }
-
-      // Limite do gráfico
-      while (chart.data.labels.length > 20) {
-        chart.data.labels.shift();
-        chart.data.datasets.forEach(d => d.data.shift());
-      }
-      chart.update();
-    });
-
-    // =====================================================
-    // 6. CONSULTA OPENWEATHERMAP
-    // =====================================================
-    async function buscarClima(cidade, pais) {
-      if (!navigator.onLine) {
-        mostrarMensagem("❌ Sem conexão com a Internet.", "#ffab91");
-        return;
-      }
-
-      try {
-        mostrarMensagem("⏳ Consultando dados meteorológicos...", "#81d4fa");
-
-        const url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(cidade)},${encodeURIComponent(pais)}&appid=${OPENWEATHER_API_KEY}&units=metric&lang=pt_br`;
-        const resposta = await fetch(url);
-
-        if (!resposta.ok) {
-          if (resposta.status === 404) throw new Error("Cidade não encontrada. Verifique o nome.");
-          if (resposta.status === 401) throw new Error("Chave de API inválida.");
-          throw new Error("Erro ao obter dados meteorológicos.");
-        }
-
-        const dados = await resposta.json();
-
-        const temp = dados.main.temp;
-        const feels = dados.main.feels_like;
-        const hum = dados.main.humidity;
-        const pressure = dados.main.pressure;
-        const tempMin = dados.main.temp_min;
-        const tempMax = dados.main.temp_max;
-        const wind = (dados.wind.speed * 3.6).toFixed(1);
-        const condicaoChuva = dados.weather.find((condicao) => [2, 3, 5].includes(Math.floor(condicao.id / 100)));
-        const intensidadeChuva = condicaoChuva
-          ? ({
-              200: "Leve",
-              201: "Moderada",
-              202: "Forte",
-              210: "Leve",
-              211: "Moderada",
-              212: "Forte",
-              221: "Moderada",
-              230: "Leve",
-              231: "Moderada",
-              232: "Forte",
-              500: "Leve",
-              501: "Moderada",
-              502: "Forte",
-              503: "Muito forte",
-              504: "Muito forte",
-              511: "Forte",
-              520: "Leve",
-              521: "Moderada",
-              522: "Forte",
-              531: "Moderada"
-            })[condicaoChuva.id] ?? "Chovendo"
-          : "Céu limpo";
-        const nomeCidade = dados.name;
-
-        // Atualizar interface
-        document.getElementById("temp").textContent = `${temp} °C`;
-        document.getElementById("feels").textContent = `${feels} °C`;
-        document.getElementById("hum").textContent = `${hum} %`;
-        document.getElementById("wind").textContent = `${wind} km/h`;
-        document.getElementById("pressure").textContent = `${pressure} hPa`;
-        document.getElementById("tempMin").textContent = `${tempMin} °C`;
-        document.getElementById("tempMax").textContent = `${tempMax} °C`;
-        document.getElementById("rainStatus").textContent = intensidadeChuva;
-        document.getElementById("cidadeAtual").textContent = `${nomeCidade}, ${pais}`;
-
-        const agora = new Date();
-        document.getElementById("lastUpdate").textContent = agora.toLocaleDateString() + " " + agora.toLocaleTimeString();
-
-        const horaStr = agora.toLocaleTimeString();
-        chart.data.labels.push(horaStr);
-        chart.data.datasets[0].data.push(temp);
-        chart.data.datasets[1].data.push(hum);
-        chart.update();
-
-        if (client.connected) {
-          client.publish(TOPIC_TEMPERATURA, temp.toString());
-          client.publish(TOPIC_UMIDADE, hum.toString());
-          client.publish(TOPIC_CIDADE_ATUAL, `${nomeCidade}, ${pais}`);
-        }
-
-        gerarAlertaClimatico(temp, hum);
-        adicionarAoHistorico(nomeCidade, temp, hum);
-
-        mostrarMensagem(`✅ Clima atualizado com sucesso!`, "#a5d6a7");
-
-      } catch (erro) {
-        mostrarMensagem(`❌ ${erro.message}`, "#ffab91");
-      }
+    if (!salvo) {
+      mostrarMensagem("Nenhuma cidade favorita para excluir.");
+      return;
     }
 
-    // =====================================================
-    // 7. RECURSOS ADICIONAIS (HISTÓRICO, FAVORITOS, ALERTAS)
-    // =====================================================
+    localStorage.removeItem("cidadeFavorita");
+    atualizarFavoritoTexto();
+    mostrarMensagem("Cidade favorita removida.");
+  });
+}
 
-    function mostrarMensagem(texto, cor) {
-      const el = document.getElementById("mensagem");
-      el.textContent = texto;
-      el.style.color = cor;
+atualizarFavoritoTexto();
+
+// =====================================================
+// 11. CONSULTAR CIDADE
+// =====================================================
+
+async function consultarCidade(nome, pais) {
+  const botao = $("aplicar");
+  if (botao) botao.disabled = true;
+
+  atualizarTexto("apiStatus", "Consultando...");
+  mostrarMensagem("Buscando cidade e dados meteorológicos...");
+
+  try {
+    const cidade = await localizarCidade(nome, pais);
+
+    const dados = await consultarPrevisao(cidade);
+
+    cidadeMonitorada = {
+      nome: cidade.name,
+      pais: cidade.country_code,
+      latitude: cidade.latitude,
+      longitude: cidade.longitude
+    };
+
+    atualizarTexto("cidadeAtual", `${cidade.name}, ${cidade.country}`);
+    atualizarIndicadores(dados);
+
+    await consultarDadosRio(cidadeMonitorada);
+
+    mostrarMensagem("Dados meteorológicos carregados com sucesso.");
+    salvarNoHistorico(`${cidade.name}, ${cidade.country}`);
+    atualizarFavoritoTexto();
+  } catch (erro) {
+    console.error(erro);
+    atualizarTexto("apiStatus", "Falha na consulta");
+    mostrarMensagem(
+      erro.message || "Não foi possível consultar os dados. Tente novamente."
+    );
+  } finally {
+    if (botao) botao.disabled = false;
+  }
+}
+
+// =====================================================
+// 12. EVENTOS DA PÁGINA
+// =====================================================
+
+const formBusca = $("formBusca");
+
+if (formBusca) {
+  formBusca.addEventListener("submit", evento => {
+    evento.preventDefault();
+
+    const nome = $("cidade").value.trim();
+    const pais = $("pais").value;
+
+    if (!nome) {
+      mostrarMensagem("Informe o nome de uma cidade.");
+      return;
     }
 
-    function gerarAlertaClimatico(temp, hum) {
-      const alertBox = document.getElementById("alertaClimatico");
-      alertBox.style.display = "block";
+    consultarCidade(nome, pais);
+  });
+}
 
-      if (temp > 32) {
-        alertBox.textContent = "⚠️ ALERTA: Temperatura elevada! Mantenha-se hidratado.";
-        alertBox.style.background = "rgba(255, 87, 34, 0.8)";
-        alertBox.style.color = "#fff";
-      } else if (temp < 12) {
-        alertBox.textContent = "❄️ ALERTA: Frio intenso! Lembre-se de se agasalhar.";
-        alertBox.style.background = "rgba(33, 150, 243, 0.8)";
-        alertBox.style.color = "#fff";
-      } else if (hum < 30) {
-        alertBox.textContent = "🌵 ALERTA: Umidade relativa do ar baixa! Evite exercícios ao ar livre.";
-        alertBox.style.background = "rgba(255, 193, 7, 0.8)";
-        alertBox.style.color = "#000";
-      } else {
-        alertBox.style.display = "none";
-      }
-    }
+const btnLimparHistorico = $("limparHistorico");
 
-    function adicionarAoHistorico(cidade, temp, hum) {
-      const lista = document.getElementById("historicoLista");
-      const li = document.createElement("li");
-      li.className = "history-item";
-      li.textContent = `${cidade}: ${temp}°C | ${hum}%`;
-      li.onclick = () => {
-        document.getElementById("cidade").value = cidade;
-        buscarClima(cidade, document.getElementById("pais").value);
-      };
-      lista.prepend(li);
-    }
+if (btnLimparHistorico) {
+  btnLimparHistorico.addEventListener("click", () => {
+    localStorage.removeItem("historicoAgua");
+    carregarHistorico();
+    mostrarMensagem("Histórico apagado.");
+  });
+}
 
-    const btnSaveFav = document.getElementById("btnSaveFav");
-    const btnLoadFav = document.getElementById("btnLoadFav");
-    const favCityText = document.getElementById("favCityText");
+// =====================================================
+// 13. INICIALIZAÇÃO
+// =====================================================
 
-    function carregarFavoritoDisplay() {
-      const fav = localStorage.getItem("fav_city");
-      if (fav) {
-        favCityText.textContent = `Favorita: ${fav}`;
-      }
-    }
-
-    btnSaveFav.addEventListener("click", () => {
-      const atual = document.getElementById("cidadeAtual").textContent;
-      if (atual && atual !== "—") {
-        localStorage.setItem("fav_city", atual);
-        carregarFavoritoDisplay();
-        alert("Cidade favorita salva!");
-      } else {
-        alert("Realize uma consulta primeiro!");
-      }
-    });
-
-    btnLoadFav.addEventListener("click", () => {
-      const fav = localStorage.getItem("fav_city");
-      if (fav) {
-        const partes = fav.split(",");
-        const cidade = partes[0].trim();
-        const pais = partes[1] ? partes[1].trim() : "BR";
-        document.getElementById("cidade").value = cidade;
-        buscarClima(cidade, pais);
-      } else {
-        alert("Nenhuma cidade favorita cadastrada!");
-      }
-    });
-
-    // =====================================================
-    // 8. EVENTOS DE BUSCA & INICIALIZAÇÃO
-    // =====================================================
-    document.getElementById("aplicar").addEventListener("click", () => {
-      const cidade = document.getElementById("cidade").value.trim();
-      const pais = document.getElementById("pais").value;
-
-      if (!cidade) {
-        mostrarMensagem("⚠️ Por favor, informe o nome de uma cidade.", "#ffe082");
-        return;
-      }
-
-      if (client.connected) {
-        client.publish(TOPIC_CIDADE, `${cidade},${pais}`);
-      }
-
-      buscarClima(cidade, pais);
-    });
-
-    document.getElementById("cidade").addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        document.getElementById("aplicar").click();
-      }
-    });
-
-    carregarFavoritoDisplay();
+carregarHistorico();
+atualizarFavoritoTexto();
+atualizarTexto("apiStatus", "Aguardando consulta");
+atualizarTexto("nivelRio", "Sem dados de nível medido");
+atualizarTexto("vazaoRio", "Aguardando consulta");
+atualizarTexto("estacaoRio", "Nenhuma estação identificada");
+atualizarTexto("dataRio", "Sem dados");

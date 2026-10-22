@@ -1,144 +1,140 @@
-# 🌦️ Clima em Tempo Real
+# 💧 Sistema de Monitoramento Hídrico
 
-Dashboard web para consulta e monitoramento de informações meteorológicas em tempo real.
+Dashboard web para consulta e monitoramento de informações meteorológicas e hidrológicas, com foco na precipitação, nas condições do solo, na previsão do tempo e na estimativa de vazão dos rios.
 
-O projeto utiliza a **OpenWeatherMap API** para obter os dados climáticos e **MQTT** para comunicação e atualização das informações, com suporte a gráficos, histórico, cidade favorita, alertas e temas claro/escuro.
+O projeto utiliza as APIs gratuitas da **Open-Meteo** para consultar dados meteorológicos e previsões hidrológicas, apresentando as informações em uma interface com gráficos, indicadores, alertas informativos, histórico de consultas, cidade favorita e temas claro e escuro.
 
 ---
 
 ## 📋 Sobre o projeto
 
-O sistema permite consultar o clima de diferentes cidades informando o nome da cidade e o código do país. Após a consulta, são exibidas informações como:
+O Sistema de Monitoramento Hídrico permite consultar diferentes cidades e visualizar informações relacionadas às condições climáticas e à previsão de precipitação.
 
-* 🌡️ Temperatura atual
-* 🌡️ Sensação térmica
-* 💧 Umidade relativa do ar
-* 💨 Velocidade do vento
-* ⏲️ Pressão atmosférica
-* 📉 Temperatura mínima
-* 📈 Temperatura máxima
-* 🌧️ Condição/intensidade de chuva
-* 🕒 Data e hora da última atualização
+A aplicação também consulta dados de previsão de vazão dos rios, quando disponíveis para a localização selecionada. O sistema diferencia as estimativas dos modelos meteorológicos e hidrológicos das medições realizadas por estações oficiais.
 
-Os dados também podem ser visualizados em um gráfico de variação de **temperatura e umidade**, que mantém os últimos **20 pontos registrados**.
+Após consultar uma cidade, são exibidas informações como:
+
+- 🌧️ Chuva atual
+- 💧 Acumulado de precipitação previsto para o dia
+- 📊 Probabilidade de chuva
+- 🕒 Projeção de precipitação para as próximas 24 horas
+- 🌱 Umidade do solo
+- 💦 Umidade relativa do ar
+- 🌡️ Temperatura do ar
+- 💨 Velocidade do vento
+- 🌊 Estimativa de vazão dos rios, quando disponível
+- 🕓 Data e hora da última atualização meteorológica
+- ⚠️ Alertas informativos baseados na previsão do tempo
+
+Os dados meteorológicos também são apresentados em gráficos de precipitação e temperatura, facilitando a visualização das variações previstas ao longo das próximas horas.
 
 ---
 
 ## ✨ Funcionalidades
 
-### ☁️ Consulta meteorológica
+### 🌦️ Consulta meteorológica
 
-O usuário pode informar uma cidade e selecionar o país para consultar os dados meteorológicos.
+O usuário pode informar o nome de uma cidade e selecionar o país para consultar as informações disponíveis.
 
-A interface possui suporte para códigos de país como:
+A aplicação oferece suporte aos seguintes códigos de país:
 
-* `BR`
-* `US`
-* `PT`
-* `ES`
-* `AR`
+- `BR` — Brasil
+- `PT` — Portugal
+- `AR` — Argentina
+- `US` — Estados Unidos
+- `ES` — Espanha
 
-A consulta utiliza a API do **OpenWeatherMap** com unidades métricas e idioma português.
+A localização é identificada por meio da API de geocodificação da Open-Meteo. Em seguida, a aplicação utiliza as coordenadas encontradas para consultar a previsão meteorológica.
 
----
+### 📊 Gráfico de precipitação
 
-### 📊 Gráfico em tempo real
+O sistema utiliza a biblioteca **Chart.js** para apresentar um gráfico de barras com a previsão de precipitação para as próximas 24 horas.
 
-O projeto utiliza **Chart.js** para apresentar as variações de temperatura e umidade.
+O gráfico apresenta:
 
-O gráfico possui dois conjuntos de dados:
+- 🌧️ Horários da previsão
+- 💧 Quantidade de precipitação prevista em milímetros (mm)
+- 📈 Variação da precipitação ao longo do período
 
-* 🌡️ Temperatura em °C
-* 💧 Umidade em %
+### 🌡️ Gráfico de temperatura
 
-Além disso, as cores do gráfico são adaptadas automaticamente conforme o tema escolhido.
+A aplicação apresenta um gráfico de linhas com a variação prevista da temperatura do ar nas próximas 24 horas.
 
----
+O gráfico permite visualizar as mudanças de temperatura ao longo do período consultado, com valores expressos em graus Celsius (°C).
 
-### 📡 Comunicação MQTT
+### 🌊 Monitoramento hidrológico
 
-A aplicação utiliza MQTT através do broker:
+O sistema realiza uma consulta à API de previsão de vazão da Open-Meteo para tentar obter informações hidrológicas relacionadas às coordenadas da cidade selecionada.
 
-```text
-ws://broker.hivemq.com:8000/mqtt
-```
+Quando os dados estão disponíveis, a interface apresenta a vazão prevista em metros cúbicos por segundo (m³/s).
 
-São utilizados os seguintes tópicos:
+O painel também apresenta informações sobre a cota do rio, a estação hidrológica e a data da medição. Entretanto, esses campos não são preenchidos como medições oficiais quando não há uma estação fluviométrica identificada e conectada.
 
-```text
-esp32/clima/temperatura
-esp32/clima/umidade
-esp32/clima/cidadeAtual
-esp32/clima/cidade
-```
+**Importante:** a vazão fornecida por um modelo é uma estimativa, não uma medição física realizada em uma estação. A aplicação não inventa valores de nível de rio quando esses dados não estão disponíveis.
 
-O status da conexão MQTT também é apresentado na interface.
+O sistema também disponibiliza links para consulta ao Sistema de Alerta de Eventos Críticos (SACE), do Serviço Geológico do Brasil (SGB), e à Agência Nacional de Águas e Saneamento Básico (ANA).
 
----
+### ⚠️ Alertas meteorológicos
+
+O sistema gera mensagens informativas com base nos dados de previsão meteorológica.
+
+Entre as condições consideradas estão:
+
+- Acumulado de chuva previsto igual ou superior a 10 mm.
+- Acumulado de chuva previsto igual ou superior a 30 mm.
+- Probabilidade máxima de chuva igual ou superior a 70%.
+- Indicação de precipitação nas condições meteorológicas atuais.
+
+Os alertas ajudam o usuário a acompanhar as condições previstas, mas não substituem os comunicados oficiais da Defesa Civil ou dos órgãos responsáveis pelo monitoramento hidrológico.
+
+### 📅 Previsão diária
+
+A aplicação apresenta uma previsão para os dias disponibilizados pela consulta, incluindo:
+
+- Temperatura mínima prevista.
+- Temperatura máxima prevista.
+- Precipitação acumulada prevista.
+- Probabilidade máxima de chuva.
 
 ### ⭐ Cidade favorita
 
-É possível salvar a cidade atualmente consultada como favorita utilizando `localStorage`.
+O usuário pode salvar a cidade consultada como favorita e carregá-la novamente quando desejar.
 
-Depois, a cidade pode ser carregada novamente através do botão **Consultar Favorita**.
+A funcionalidade utiliza o `localStorage` do navegador para armazenar as informações da cidade favorita.
 
----
+### 🕒 Histórico de consultas
 
-### 🕒 Histórico
+As cidades consultadas são registradas no histórico da aplicação.
 
-Cada consulta realizada é adicionada ao histórico da interface.
+O histórico armazena até dez registros e pode ser limpo por meio do botão correspondente na interface.
 
-Um item do histórico pode ser selecionado para realizar novamente a consulta daquela cidade.
-
----
-
-### ⚠️ Alertas climáticos
-
-O sistema gera alertas quando determinadas condições são identificadas:
-
-* 🌡️ Temperatura acima de **32 °C**
-* ❄️ Temperatura abaixo de **12 °C**
-* 🌵 Umidade abaixo de **30%**
-
----
+Os dados são armazenados localmente no navegador, utilizando o `localStorage`.
 
 ### 🌓 Tema claro e escuro
 
-A interface possui alternância entre **tema claro e tema escuro**.
+A interface possui alternância entre tema claro e tema escuro.
 
-A preferência do usuário é armazenada no `localStorage`, permitindo manter o tema escolhido entre acessos.
-
-O CSS possui regras específicas para os dois temas.
-
----
+A preferência escolhida pelo usuário é armazenada no `localStorage`, permitindo que seja mantida entre acessos no mesmo navegador.
 
 ### 📱 Interface responsiva
 
-O layout foi desenvolvido para se adaptar a diferentes tamanhos de tela, incluindo dispositivos móveis.
+O projeto utiliza HTML, CSS e JavaScript para apresentar as informações em uma interface organizada por painéis, indicadores e gráficos.
 
-O CSS utiliza *media queries* para reorganizar:
-
-* Campos de busca
-* Métricas
-* Cards
-* Rodapé
-* Elementos da interface
+A responsividade depende das regras de estilo definidas no arquivo `style.css`, que organiza os elementos para diferentes tamanhos de tela.
 
 ---
 
 ## 🛠️ Tecnologias utilizadas
 
-* HTML5
-* CSS3
-* JavaScript
-* OpenWeatherMap API
-* MQTT
-* HiveMQ
-* Chart.js
-* ESP32
-* LocalStorage
-
-As bibliotecas **MQTT** e **Chart.js** são carregadas diretamente no HTML por CDN.
+- **HTML5:** estrutura da página.
+- **CSS3:** estilização, temas e organização visual.
+- **JavaScript:** lógica de consulta, processamento e apresentação dos dados.
+- **Open-Meteo Geocoding API:** localização de cidades e obtenção de coordenadas.
+- **Open-Meteo Forecast API:** consulta de dados meteorológicos e previsões.
+- **Open-Meteo Flood API:** consulta de previsões hidrológicas de vazão.
+- **Chart.js:** criação dos gráficos de precipitação e temperatura.
+- **Fetch API:** comunicação com os serviços externos.
+- **LocalStorage:** armazenamento local do histórico, da cidade favorita e da preferência de tema.
 
 ---
 
@@ -156,161 +152,164 @@ As bibliotecas **MQTT** e **Chart.js** são carregadas diretamente no HTML por C
 
 Responsável pela estrutura da aplicação e pelos elementos da interface, incluindo:
 
-* Consulta de cidades
-* Informações meteorológicas
-* Histórico
-* Cidade favorita
-* Gráfico
+- Formulário de consulta de cidades.
+- Indicadores meteorológicos.
+- Painel de monitoramento hidrológico.
+- Alertas meteorológicos.
+- Gráficos.
+- Previsão diária.
+- Histórico de consultas.
+- Cidade favorita.
+- Botão de alternância de tema.
 
 ### `style.css`
 
-Contém toda a estilização da aplicação, incluindo:
+Responsável pela aparência da aplicação, incluindo:
 
-* Temas claro e escuro
-* Cards
-* Responsividade
-* Botões
-* Métricas
-* Gráfico
-* Histórico
-* Cabeçalho
-* Rodapé
+- Cores e gradientes.
+- Tema claro e tema escuro.
+- Cartões e indicadores.
+- Botões e formulários.
+- Organização dos gráficos.
+- Cabeçalho e rodapé.
+- Adaptação da interface a diferentes telas.
 
 ### `script.js`
 
-Implementa a lógica da aplicação, incluindo:
+Responsável pela lógica da aplicação, incluindo:
 
-* Conexão MQTT
-* Consulta à OpenWeatherMap
-* Atualização dos dados
-* Gráfico
-* Alertas
-* Histórico
-* Cidade favorita
-* Alternância de tema
+- Busca e localização de cidades.
+- Consulta às APIs da Open-Meteo.
+- Atualização dos indicadores meteorológicos.
+- Criação e atualização dos gráficos.
+- Consulta à previsão de vazão dos rios.
+- Exibição de alertas informativos.
+- Geração da previsão diária.
+- Gerenciamento do histórico.
+- Armazenamento da cidade favorita.
+- Alternância entre os temas claro e escuro.
+- Tratamento de erros nas consultas.
 
 ---
 
-## 🚀 Como executar
+## 🚀 Como executar o projeto
 
-### 1. Clone ou baixe o projeto
+### 1. Baixe ou clone o projeto
 
-Baixe os arquivos do projeto e mantenha os três arquivos principais no mesmo diretório:
+Mantenha os arquivos principais no mesmo diretório:
 
 ```text
 index.html
 style.css
 script.js
+README.md
 ```
 
----
+### 2. Confira os links das bibliotecas
 
-### 2. Configure a chave da OpenWeatherMap
+No arquivo `index.html`, carregue o Chart.js antes do arquivo `script.js`:
 
-No arquivo `script.js`, configure sua chave da API:
-
-```javascript
-const OPENWEATHER_API_KEY = "SUA_CHAVE_AQUI";
+```html
+<script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
+<script src="script.js" defer></script>
 ```
 
-> ⚠️ **Importante:** não compartilhe uma chave de API real publicamente. Em projetos publicados, utilize uma estratégia segura para armazenar credenciais.
+Os dois arquivos devem ser carregados apenas uma vez.
 
----
+### 3. Execute a aplicação
 
-### 3. Execute o projeto
+Recomenda-se utilizar um servidor web local, como o Live Server do Visual Studio Code.
 
-Como o projeto é composto por arquivos HTML, CSS e JavaScript, ele pode ser executado através de um servidor web local.
-
-Por exemplo, utilizando Python:
+Outra opção é utilizar o Python, caso esteja instalado:
 
 ```bash
 python -m http.server 8000
 ```
 
-Depois, acesse:
+Em seguida, acesse o endereço:
 
 ```text
 http://localhost:8000
 ```
 
----
-
 ### 4. Consulte uma cidade
 
-1. Digite o nome da cidade.
-2. Selecione o código do país.
-3. Clique em **Aplicar cidade**.
-4. Aguarde a consulta meteorológica.
-
-Os dados serão exibidos no painel e também poderão ser enviados através do MQTT.
+1. Digite o nome da cidade no campo de consulta.
+2. Selecione o país correspondente.
+3. Clique em **Consultar**.
+4. Aguarde o carregamento das informações meteorológicas.
+5. Confira os indicadores, os gráficos e a previsão diária.
+6. Consulte o painel hidrológico para verificar se há dados de vazão disponíveis.
 
 ---
 
-## 🔌 Integração com ESP32
+## 🌐 APIs utilizadas
 
-O projeto foi preparado para integração com um dispositivo **ESP32** através do protocolo MQTT.
+### Open-Meteo Geocoding API
 
-### Tópicos principais
+Utilizada para localizar cidades e obter informações como latitude, longitude, nome e país.
 
 ```text
-esp32/clima/temperatura
-esp32/clima/umidade
-esp32/clima/cidadeAtual
-esp32/clima/cidade
+https://geocoding-api.open-meteo.com/v1/search
 ```
 
-A aplicação recebe mensagens de temperatura e umidade e atualiza os valores apresentados no dashboard e no gráfico.
+### Open-Meteo Forecast API
 
-Quando uma consulta meteorológica é realizada, os valores de temperatura e umidade também podem ser publicados no broker MQTT.
+Utilizada para obter informações meteorológicas atuais, dados horários e previsões diárias.
 
----
+```text
+https://api.open-meteo.com/v1/forecast
+```
 
-## 🌐 API utilizada
+### Open-Meteo Flood API
 
-O projeto utiliza a **OpenWeatherMap** para obter os dados meteorológicos.
+Utilizada para consultar previsões hidrológicas, incluindo dados de vazão quando disponíveis para a localização consultada.
 
-A consulta retorna informações utilizadas pelo dashboard, incluindo:
+```text
+https://flood-api.open-meteo.com/v1/flood
+```
 
-* 🌡️ Temperatura
-* 🌡️ Sensação térmica
-* 💧 Umidade
-* ⏲️ Pressão
-* 📉 Temperatura mínima
-* 📈 Temperatura máxima
-* 💨 Velocidade do vento
-* 🌧️ Condições meteorológicas
+As informações apresentadas dependem da disponibilidade dos dados fornecidos pelas APIs para cada localização.
 
 ---
 
-## ⚠️ Tratamento de erros
+## ⚠️ Tratamento de erros e limitações
 
-O sistema possui tratamento para situações como:
+A aplicação possui tratamento para situações como:
 
-* ❌ Ausência de conexão com a Internet
-* ❌ Cidade não encontrada
-* ❌ Chave de API inválida
-* ❌ Erros gerais na consulta meteorológica
-* ❌ Falha na conexão MQTT
+- Cidade não encontrada.
+- País selecionado incompatível com a cidade localizada.
+- Falhas nas consultas às APIs.
+- Indisponibilidade de dados hidrológicos.
+- Ausência de informações para a criação dos gráficos.
+- Falhas na conexão com a Internet.
+
+Algumas limitações devem ser consideradas:
+
+- A previsão meteorológica não equivale a uma medição local realizada por uma estação.
+- A disponibilidade de previsão de vazão varia conforme a localização e os dados oferecidos pela API.
+- O nível físico do rio não é calculado a partir da vazão estimada.
+- A aplicação não identifica automaticamente uma estação fluviométrica oficial para cada cidade.
+- Os alertas são informativos e não substituem os alertas oficiais de emergência.
+
+Em situações de risco, recomenda-se consultar a Defesa Civil e os órgãos oficiais responsáveis pelo monitoramento de rios e eventos hidrológicos.
 
 ---
 
 ## 🎨 Interface
 
-A interface utiliza:
+A interface do Sistema de Monitoramento Hídrico é organizada em painéis de consulta, indicadores meteorológicos, monitoramento hidrológico, gráficos e previsão diária.
 
-* Cards com efeito de transparência e desfoque
-* Gradientes
-* Layout responsivo
-* Tema claro
-* Tema escuro
-* Gráficos interativos
+O usuário pode alternar entre os temas claro e escuro, consultar diferentes localidades, acompanhar as previsões e verificar a disponibilidade de informações de vazão.
 
-O cabeçalho apresenta o nome **Clima em Tempo Real** e o botão para alternar entre os modos claro e escuro.
+O objetivo é reunir informações meteorológicas e hidrológicas em um único ambiente, facilitando a visualização e o acompanhamento das condições previstas.
 
 ---
 
 ## 👨‍💻 Projeto
 
-### Clima em Tempo Real
+### Sistema de Monitoramento Hídrico
 
-Projeto desenvolvido como uma aplicação web para **monitoramento meteorológico** e **integração com IoT através de MQTT e ESP32**.
+Projeto desenvolvido como uma aplicação web para consulta e acompanhamento de informações meteorológicas e previsões hidrológicas, utilizando APIs gratuitas, gráficos interativos e armazenamento local no navegador.
+
+A proposta é facilitar o acesso a dados de precipitação, temperatura, condições do solo e estimativas de vazão, mantendo a distinção entre previsões de modelos e medições oficiais.

@@ -1,141 +1,206 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
-
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Clima em Tempo Real</title>
-  <link rel="icon" href="https://cdn-icons-png.flaticon.com/512/1116/1116453.png" type="image/png" />
-  <link rel="stylesheet" href="style.css" />
-  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="script.js" defer></script>
-</head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sistema de Monitoramento Hídrico</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="img/agora sim.png" type="image/x-icon">
+ 
+<script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
+<script src="script.js" defer></script>
 
+</head>
 <body>
   <header>
     <div class="header-content">
       <div class="header-brand">
-        <img class="header-weather-icon" src="https://cdn-icons-png.flaticon.com/512/1116/1116453.png"
-          alt="Ícone de clima" />
-        <h1> Clima em Tempo Real</h1>
+        <h1>Monitoramento de Recursos Hídricos</h1>
       </div>
-      <button class="theme-toggle-btn" id="btnTema" aria-label="Alternar tema claro e escuro"> Alternar Modo</button>
+      <button id="btnTema" class="theme-toggle-btn">Alternar Tema</button>
     </div>
   </header>
 
-  <div class="main-container">
+  <main class="main-container">
 
-    <div class="card top-status-bar">
-      <div>
-        <span>Cidade atual: <b id="cidadeAtual">----</b></span>
-        <br>
-        <small style="color: var(--subtext-color);">Última Atualização: <span id="lastUpdate">----</span></small>
-      </div>
-      <div class="status-mqtt">
-        MQTT: <span id="mqttStatus" class="status-online">Conectado</span>
-      </div>
-    </div>
-
-    <div class="search-grid">
-      <div class="card">
-        <h2>☁️ Consultar Clima</h2>
-        <div class="row weather-search-controls">
-          <label for="cidade" class="sr-only" style="display:none;">Cidade</label>
-          <input id="cidade" type="text" placeholder="Ex.: São Paulo" aria-label="Nome da cidade" />
-
-          <label for="pais" class="sr-only" style="display:none;">País</label>
-          <select id="pais" aria-label="Código do País">
-            <option value="BR">BR</option>
-            <option value="US">US</option>
-            <option value="PT">PT</option>
-            <option value="ES">ES</option>
-            <option value="AR">AR</option>
-          </select>
-
-          <button id="aplicar" aria-label="Buscar dados da cidade">Aplicar cidade</button>
+    <section class="card top-panel">
+      
+      <div class="status-bar">
+        <div class="status-item">
+          <span class="status-label">Localidade Monitorada</span>
+          <h2 id="cidadeAtual" class="status-value">----</h2>
         </div>
-        <div id="mensagem" role="status" aria-live="polite"></div>
-      </div>
-
-      <div class="card">
-        <h2>⭐ Cidade Favorita</h2>
-        <div id="favBox">
-          <p id="favCityText" style="margin: 5px 0;">Nenhuma cidade favorita.</p>
-          <div class="row" style="margin-top: 10px;">
-            <button id="btnSaveFav">Salvar Atual</button>
-            <button id="btnLoadFav" style="background:#2196F3;">Consultar Favorita</button>
+        <div class="status-item">
+          <span class="status-label">Última Atualização</span>
+          <p id="lastUpdate" class="status-subvalue">----</p>
+        </div>
+        <div class="status-item">
+          <span class="status-label">Status da Conexão</span>
+          <div id="apiStatusBadge" class="status-badge success">
+            <span class="status-dot"></span>
+            <span id="apiStatus">Sistema Operacional</span>
           </div>
         </div>
       </div>
-    </div>
 
-    <div id="alertaClimatico" class="alert-box"></div>
+      <hr class="panel-divider">
 
-    <div class="card">
-      <h2>📊 Informações Meteorológicas</h2>
-      <div class="metricas-principais">
-        <div class="card-metrica card-metrica-destaque">
-          <span class="label">🌡️ Temperatura:</span>
-          <b id="temp">-- °C</b>
+      <div class="panel-grid">
+        
+        <div class="panel-search">
+          <h3>Consulta de Localidade</h3>
+          <form id="formBusca">
+            <input id="cidade" type="text" placeholder="Ex.: Jundiaí" required>
+            <select id="pais" aria-label="País">
+              <option value="BR">Brasil</option>
+              <option value="PT">Portugal</option>
+              <option value="AR">Argentina</option>
+              <option value="US">Estados Unidos</option>
+              <option value="ES">Espanha</option>
+            </select>
+            <button type="submit" id="aplicar">Consultar</button>
+          </form>
         </div>
-        <div class="card-metrica card-metrica-destaque">
-          <span class="label">🌡️ Sensação Térmica:</span>
-          <b id="feels">-- °C</b>
+
+        <div class="panel-favorite">
+          <h3>Localidade Favorita</h3>
+          <p id="favCityText">Nenhuma localidade salva.</p>
+          <div class="fav-actions">
+            <button id="btnSaveFav" type="button" class="btn-secondary">Fixar Atual</button>
+            <button id="btnDeleteFav" type="button" class="btn-primary">Excluir</button>
+          </div>
         </div>
-        <div class="card-metrica card-metrica-destaque">
-          <span class="label">🌧️ Céu: </span>
-          <b id="rainStatus">--</b>
-        </div>
+
       </div>
-      <div class="metricas-secundarias">
-        <div class="card-metrica">
-          <span class="label">💧 Umidade:</span>
-          <b id="hum">-- %</b>
-        </div>
-        <div class="card-metrica">
-          <span class="label">💨 Vento:</span>
-          <b id="wind">-- km/h</b>
-        </div>
-        <div class="card-metrica">
-          <span class="label">⏲️ Pressão:</span>
-          <b id="pressure">-- hPa</b>
-        </div>
-        <div class="card-metrica">
-          <span class="label">📉 Temp. Mínima:</span>
-          <b id="tempMin">-- °C</b>
-        </div>
-        <div class="card-metrica">
-          <span class="label">📈 Temp. Máxima:</span>
-          <b id="tempMax">-- °C</b>
-        </div>
+
+      <div class="panel-history">
+        <span class="history-label">HISTÓRICO DE CONSULTAS:</span>
+        <ul id="historicoLista" class="history-list"></ul>
+        <button id="limparHistorico" type="button" class="btn-clean-end">Limpar Histórico</button>
       </div>
-    </div>
 
-    <div class="card">
-      <h3>🕒 Histórico de Consultas</h3>
-      <ul id="historicoLista" class="history-list"></ul>
-    </div>
-
-    <div class="card card-grafico">
-      <h2> Variações em Tempo Real</h2>
-      <div class="chart-container">
-        <canvas id="chart"></canvas>
+    </section>
+    
+    <section>
+      <div class="metrics metrics-highlight">
+        <article class="metric metric-featured">
+          <span class="metric-title">Umidade Relativa do Ar</span>
+          <strong id="umidadeAr" class="metric-value">-- %</strong>
+          <small class="metric-desc">Índice atmosférico</small>
+        </article>
+        <article class="metric metric-featured">
+          <span class="metric-title">Temperatura</span>
+          <strong id="temperatura" class="metric-value">-- °C</strong>
+          <small class="metric-desc">Temperatura do ar</small>
+        </article>
+        <article class="metric metric-featured">
+          <span class="metric-title">Velocidade do Vento</span>
+          <strong id="vento" class="metric-value">-- km/h</strong>
+          <small class="metric-desc">Vetor de superfície</small>
+        </article>
       </div>
-    </div>
-  </div>
+    </section>
 
-  <footer class="site-footer">
+    <section>
+      <h2>Monitoramento de Precipitação</h2>
+      <div class="metrics">
+        <article class="metric">
+          <span class="metric-title">Chuva Atual</span>
+          <strong id="chuvaAtual" class="metric-value">-- mm</strong>
+        </article>
+        <article class="metric">
+          <span class="metric-title">Acumulado do Dia</span>
+          <strong id="chuvaHoje" class="metric-value">-- mm</strong>
+        </article>
+        <article class="metric">
+          <span class="metric-title">Probabilidade de Chuva</span>
+          <strong id="probChuva" class="metric-value">-- %</strong>
+        </article>
+        <article class="metric">
+          <span class="metric-title">Projeção 24 Horas</span>
+          <strong id="chuva24h" class="metric-value">-- mm</strong>
+        </article>
+      </div>
+    </section>
+
+    <section>
+      <h2>Condições do Solo</h2>
+      <div class="metrics metrics-solo">
+        <article class="metric metric-wide">
+          <div class="metric-header-inline">
+            <span class="metric-title">Umidade do Solo</span>
+            <small class="metric-desc">Volumétrica superficial (0 a 7 cm)</small>
+          </div>
+          <strong id="umidadeSolo" class="metric-value">--</strong>
+        </article>
+      </div>
+    </section>
+
+    <!-- Monitoramento de Rios -->
+    <section class="card">
+      <h2>Monitoramento Hidrológico</h2>
+      <p class="card-desc">
+        A medição do nível de rios exige integração com estações fluviométricas locais de medição física.
+      </p>
+      <div class="metrics">
+        <article class="metric">
+          <span class="metric-title">Vazão Estimada</span>
+          <strong id="vazaoRio" class="metric-value">Sem dados</strong>
+        </article>
+        <article class="metric">
+          <span class="metric-title">Estação Hidrológica</span>
+          <strong id="estacaoRio" class="metric-value">Não configurada</strong>
+        </article>
+        <article class="metric">
+          <span class="metric-title">Data de Medição</span>
+          <strong id="dataRio" class="metric-value">Sem dados</strong>
+        </article>
+      </div>
+      <div id="alertaRio" class="alert-box neutral">
+        Estação fluviométrica não conectada. Não há dados suficientes para cálculo do risco de transbordamento.
+      </div>
+      <br>
+      <div class="external-links">
+        <a href="https://www.sgb.gov.br/sace/" target="_blank" rel="noopener noreferrer">Acessar Sistema de Alerta de Eventos Críticos (SACE / SGB)</a>
+        <a href="https://www.gov.br/ana/pt-br" target="_blank" rel="noopener noreferrer">Acessar Agência Nacional de Águas e Saneamento Básico (ANA)</a>
+      </div>
+    </section>
+
+    <!-- Gráfico Chuva -->
+    <section class="card card-grafico">
+      <h2>Projeção de Precipitação Pluviométrica</h2>
+      <div class="grafico-container">
+        <canvas id="graficoChuva"></canvas>
+      </div>
+    </section>
+
+    <!-- Gráfico Temperatura -->
+    <section class="card card-grafico">
+      <h2>Variação Térmica Temporal</h2>
+      <div class="grafico-container">
+        <canvas id="graficoTemperatura"></canvas>
+      </div>
+    </section>
+
+    <!-- Previsão Diária -->
+    <section class="card">
+      <h2>Previsão Diária Estendida</h2>
+      <div id="previsaoDiaria" class="daily-grid">
+        Realize uma consulta para carregar o histórico estendido.
+      </div>
+    </section>
+
+  </main>
+
+  <footer>
     <div class="footer-content">
       <div class="footer-brand">
-        <strong>Clima em Tempo Real</strong>
+        <strong>Sistema de Monitoramento Hídrico</strong>
       </div>
       <div class="footer-meta">
-        <span>OpenWeatherMap · MQTT · ESP32</span>
+        <span>2026</span>
       </div>
     </div>
   </footer>
-
 </body>
-
 </html>
